@@ -1,0 +1,8 @@
+dl:
+#  account: storageaccountdemoapp
+  delta:
+    path: abfss://bronze@storageaccountdemoapp.dfs.core.windows.net/trades/trade_events
+#  oauth:
+#    tenantId: ee785629-a32d-455e-9974-d0eb9ac5814d
+#    clientId: d15e7298-5aad-4bcf-ae8d-f7350e6e9c0b
+#    clientSecret: qOM8Q~3jAqtUalH2Ih9bIMoswIdyVIvFpOLJhcw5s
