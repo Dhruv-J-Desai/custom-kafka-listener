@@ -1,3 +1,1 @@
 com.example.enterprise_kafka_starter.config.EnterpriseKafkaAutoConfiguration
-com.example.enterprise_kafka_starter.spark.SparkAutoConfiguration
-com.example.enterprise_kafka_starter.delta.DeltaAutoConfiguration
