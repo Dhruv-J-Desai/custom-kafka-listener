@@ -1,7 +1,6 @@
 package com.example.kafka_producer_consumer.consumer;
 
 import com.example.enterprise_kafka_starter.annotation.EnterpriseKafkaListener;
-import com.example.enterprise_kafka_starter.delta.DeltaSink;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,11 +11,6 @@ import org.springframework.stereotype.Component;
 public class EventsConsumer {
 
     private static final Logger log = LoggerFactory.getLogger(EventsConsumer.class);
-    private final DeltaSink deltaSink;
-
-    public EventsConsumer(DeltaSink deltaSink) {
-        this.deltaSink = deltaSink;
-    }
 
     @EnterpriseKafkaListener(
             topics = "trade-events",
@@ -27,8 +21,6 @@ public class EventsConsumer {
         try {
             log.info("Consume: partition={}, offset={}, key={}, payload={}",
                     record.partition(), record.offset(), record.key(), record.value());
-
-            deltaSink.enqueue(record.value());
 
             // Commit offset (manual)
             ack.acknowledge();
