@@ -1,5 +1,7 @@
-package com.example.kafka_producer_consumer.producer;
+package com.example.kafka_producer_consumer.producer.controller;
 
+import com.example.kafka_producer_consumer.producer.model.TradeEvent;
+import com.example.kafka_producer_consumer.producer.service.TradeEventProducer;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;

@@ -1,4 +1,4 @@
-package com.example.kafka_producer_consumer.producer;
+package com.example.kafka_producer_consumer.producer.model;
 
 public record TradeEvent(
         String tradeId,

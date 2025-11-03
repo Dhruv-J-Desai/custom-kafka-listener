@@ -1,1 +1,2 @@
 com.example.enterprise_kafka_starter.config.EnterpriseKafkaAutoConfiguration
+com.example.enterprise_kafka_starter.jdbc.DbxJdbcAutoConfiguration
