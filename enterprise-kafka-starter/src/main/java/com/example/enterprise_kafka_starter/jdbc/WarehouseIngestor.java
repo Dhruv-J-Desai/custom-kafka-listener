@@ -1,53 +1,63 @@
 package com.example.enterprise_kafka_starter.jdbc;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PreDestroy;
-import org.slf4j.Logger; import org.slf4j.LoggerFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
-import java.sql.*;
-import java.time.Instant;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.Statement;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 public class WarehouseIngestor {
     private static final Logger log = LoggerFactory.getLogger(WarehouseIngestor.class);
-    private static final ObjectMapper M = new ObjectMapper()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     public enum Mode {INSERT, MERGE}
 
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class TradeEvent {
-        public String tradeId;
-        public String symbol;
-        public Integer quantity;
-        public Double price;
-        public Instant valid_from; // optional
-    }
-
     private final DataSource ds;
-    private final String fqTable;
     private final Mode mode;
     private final int maxBatch;
+    private final long flushMs;
+    private final Set<String> mergeKeys;             // e.g., ["trade_id"]
+    private final Set<String> updateAllowlist;       // optional
+
+    private volatile TableMeta tableMeta;            // lazy-loaded & cached
+    private volatile String insertSql;               // cached
     private final BlockingQueue<String> queue = new LinkedBlockingQueue<>(50_000);
     private final ScheduledExecutorService sched = Executors.newSingleThreadScheduledExecutor();
 
-    public WarehouseIngestor(DataSource ds, String catalog, String schema, String table,
-                             Mode mode, int maxBatch, long flushMs) {
+    private final String catalog, schema, table;
+
+    public WarehouseIngestor(DataSource ds,
+                             String catalog, String schema, String table,
+                             Mode mode, int maxBatch, long flushMs,
+                             Set<String> mergeKeys, Set<String> updateAllowlist) {
         this.ds = ds;
-        this.fqTable = String.format("%s.%s.%s", catalog, schema, table);
+        this.catalog = catalog;
+        this.schema = schema;
+        this.table = table;
         this.mode = mode;
         this.maxBatch = maxBatch;
+        this.flushMs = flushMs;
+        this.mergeKeys = (mergeKeys == null ? Set.of() : Set.copyOf(mergeKeys));
+        this.updateAllowlist = (updateAllowlist == null ? Set.of() : Set.copyOf(updateAllowlist));
         sched.scheduleAtFixedRate(this::flushSafe, flushMs, flushMs, TimeUnit.MILLISECONDS);
-        log.info("Databricks JDBC target={} mode={}", fqTable, mode);
+        log.info("Databricks JDBC target={}.{}.{} mode={} keys={}", catalog, schema, table, mode, this.mergeKeys);
     }
 
     public void enqueueJson(String json) {
         if (!queue.offer(json)) log.warn("Ingest queue full; dropping");
         if (queue.size() >= maxBatch) flushSafe();
+    }
+
+    private void ensureMeta(Connection c) throws Exception {
+        if (tableMeta != null) return;
+        TableMeta tm = TableMeta.load(c, catalog, schema, table, mergeKeys);
+        this.tableMeta = tm;
+        this.insertSql = SqlBuilders.insertSql(tm);
     }
 
     private void flushSafe() {
@@ -63,60 +73,71 @@ public class WarehouseIngestor {
         queue.drainTo(raw, maxBatch);
         if (raw.isEmpty()) return;
 
-        List<TradeEvent> items = new ArrayList<>(raw.size());
-        for (String s : raw) items.add(M.readValue(s, TradeEvent.class));
+        // parse once; keep only columns that exist in the table
+        List<Map<String, Object>> rows = new ArrayList<>(raw.size());
+        for (String js : raw) {
+            Map<String, Object> m = JsonProjector.toRow(js);
+            rows.add(m);
+        }
 
-        if (mode == Mode.INSERT) insertBatch(items);
-        else mergeBatch(items);
+        try (Connection c = ds.getConnection()) {
+            ensureMeta(c);
+            if (mode == Mode.INSERT) insertBatch(c, rows);
+            else mergeBatch(c, rows);
+        }
     }
 
-    private void insertBatch(List<TradeEvent> items) throws Exception {
-        String sql = "INSERT INTO " + fqTable +
-                " (trade_id, symbol, quantity, price, valid_from, tx_start) " +
-                " VALUES (?, ?, ?, ?, ?, current_timestamp())";
-        try (Connection c = ds.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
-            for (TradeEvent t : items) {
-                ps.setString(1, t.tradeId);
-                ps.setString(2, t.symbol);
-                if (t.quantity == null) ps.setNull(3, Types.INTEGER);
-                else ps.setInt(3, t.quantity);
-                if (t.price == null) ps.setNull(4, Types.DOUBLE);
-                else ps.setDouble(4, t.price);
-                if (t.valid_from == null) ps.setNull(5, Types.TIMESTAMP);
-                else ps.setTimestamp(5, Timestamp.from(t.valid_from));
+    // somewhere in WarehouseIngestor (private method)
+    private static void bind(PreparedStatement ps, int paramIndex, Object value, int jdbcType) throws Exception {
+        if (value == null) {
+            ps.setNull(paramIndex, jdbcType);
+        } else {
+            ps.setObject(paramIndex, value);
+        }
+    }
+
+    private void insertBatch(Connection c, List<Map<String, Object>> rows) throws Exception {
+        try (PreparedStatement ps = c.prepareStatement(insertSql)) {
+            for (Map<String, Object> row : rows) {
+                Object[] params = JsonProjector.projectToColumns(row, tableMeta.columns);
+                for (int i = 0; i < params.length; i++) {
+                    int jdbcType = tableMeta.columns.get(i).jdbcType;
+                    bind(ps, i + 1, params[i], jdbcType);
+                }
                 ps.addBatch();
             }
             ps.executeBatch();
         }
     }
 
-    private void mergeBatch(List<TradeEvent> items) throws Exception {
-        String staging = fqTable.replace('.', '_') + "_tmp_" + UUID.randomUUID().toString().replace("-", "");
-        try (Connection c = ds.getConnection(); Statement st = c.createStatement()) {
-            st.execute("CREATE TABLE " + staging + " (" +
-                    "trade_id STRING, symbol STRING, quantity INT, price DOUBLE, valid_from TIMESTAMP, tx_start TIMESTAMP)");
-            try (PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO " + staging + " (trade_id, symbol, quantity, price, valid_from, tx_start) " +
-                            "VALUES (?, ?, ?, ?, ?, current_timestamp())")) {
-                for (TradeEvent t : items) {
-                    ps.setString(1, t.tradeId);
-                    ps.setString(2, t.symbol);
-                    if (t.quantity == null) ps.setNull(3, Types.INTEGER);
-                    else ps.setInt(3, t.quantity);
-                    if (t.price == null) ps.setNull(4, Types.DOUBLE);
-                    else ps.setDouble(4, t.price);
-                    if (t.valid_from == null) ps.setNull(5, Types.TIMESTAMP);
-                    else ps.setTimestamp(5, Timestamp.from(t.valid_from));
-                    ps.addBatch();
+    private void mergeBatch(Connection c, List<Map<String, Object>> rows) throws Exception {
+        String staging = (catalog + "_" + schema + "_" + table + "_tmp_" + UUID.randomUUID().toString().replace("-", ""));
+        String colList = tableMeta.columns.stream().map(col -> col.name).collect(Collectors.joining(", "));
+        String insertStaging = "INSERT INTO " + staging + " (" + colList + ") VALUES (" +
+                tableMeta.columns.stream().map(col -> "?").collect(Collectors.joining(", ")) + ")";
+
+        try (Statement st = c.createStatement()) {
+            // create staging with same columns (types can be relaxed to STRING if needed)
+            String create = "CREATE TABLE " + staging + " AS SELECT * FROM " + tableMeta.fq + " WHERE 1=0";
+            st.execute(create);
+        }
+        try (PreparedStatement ps = c.prepareStatement(insertStaging)) {
+            for (Map<String, Object> row : rows) {
+                Object[] params = JsonProjector.projectToColumns(row, tableMeta.columns);
+                for (int i = 0; i < params.length; i++) {
+                    int jdbcType = tableMeta.columns.get(i).jdbcType;
+                    bind(ps, i + 1, params[i], jdbcType);      // <-- typed null-safe bind
                 }
-                ps.executeBatch();
+                ps.addBatch();
             }
-            st.execute("MERGE INTO " + fqTable + " t USING " + staging + " s ON t.trade_id = s.trade_id " +
-                    "WHEN MATCHED THEN UPDATE SET symbol=s.symbol, quantity=s.quantity, price=s.price, " +
-                    "valid_from=s.valid_from, tx_start=s.tx_start " +
-                    "WHEN NOT MATCHED THEN INSERT *");
+            ps.executeBatch();
+        }
+
+        String merge = SqlBuilders.mergeSql(tableMeta, updateAllowlist).replace("%STAGING%", staging);
+        try (Statement st = c.createStatement()) {
+            st.execute(merge);
         } finally {
-            try (Connection c = ds.getConnection(); Statement st = c.createStatement()) {
+            try (Statement st = c.createStatement()) {
                 st.execute("DROP TABLE IF EXISTS " + staging);
             } catch (Exception ignore) {
             }
@@ -125,7 +146,11 @@ public class WarehouseIngestor {
 
     @PreDestroy
     public void shutdown() {
-        try { flush(); } catch (Exception e) { log.warn("final flush failed", e); }
+        try {
+            flush();
+        } catch (Exception e) {
+            log.warn("final flush failed", e);
+        }
         sched.shutdown();
     }
 }

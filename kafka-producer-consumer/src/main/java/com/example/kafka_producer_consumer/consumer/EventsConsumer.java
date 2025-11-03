@@ -28,9 +28,7 @@ public class EventsConsumer {
         try {
             log.info("Consume: partition={}, offset={}, key={}, payload={}",
                     record.partition(), record.offset(), record.key(), record.value());
-
             ingestor.enqueueJson(record.value());
-
             ack.acknowledge();
         } catch (Exception e) {
             log.error("Processing failed, delegating to error handler", e);

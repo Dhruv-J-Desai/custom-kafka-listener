@@ -41,7 +41,9 @@ enterprise:
     catalog: kafka_data
     schema: bronze
     table: trade_events
-    mode: INSERT
+    mode: INSERT #INSERT OR MERGE
+    merge-keys: [ trade_id ]
+    update-allowlist: [ symbol, quantity, price, valid_from, tx_start ]
     batch-max-size: 1000
     batch-flush-ms: 2000
 

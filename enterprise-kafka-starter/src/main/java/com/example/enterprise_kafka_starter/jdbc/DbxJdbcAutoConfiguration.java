@@ -11,6 +11,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 
 import javax.sql.DataSource;
+import java.util.Set;
 
 @AutoConfiguration
 @EnableConfigurationProperties(DatabricksProperties.class)
@@ -22,7 +23,7 @@ public class DbxJdbcAutoConfiguration {
     @Bean
     public DataSource databricksDataSource(DatabricksProperties p) {
         String url = String.format(
-                "jdbc:databricks://%s:443/default;transportMode=http;ssl=1;AuthMech=3;UID=token;PWD=%s;httpPath=%s;EnableArrow=1;IgnoreTransactions=1;UseNativeQuery=1",
+                "jdbc:databricks://%s:443/default;transportMode=http;ssl=1;AuthMech=3;UID=token;PWD=%s;httpPath=%s;EnableArrow=0;IgnoreTransactions=1;UseNativeQuery=1",
                 p.getHost(), p.getToken(), p.getHttpPath());
 
         HikariConfig cfg = new HikariConfig();
@@ -44,6 +45,9 @@ public class DbxJdbcAutoConfiguration {
                 p.getTable(),
                 WarehouseIngestor.Mode.valueOf(p.getMode().toUpperCase()),
                 p.getBatchMaxSize(),
-                p.getBatchFlushMs());
+                p.getBatchFlushMs(),
+                Set.copyOf(p.getMergeKeys()),
+                Set.copyOf(p.getUpdateAllowlist())
+        );
     }
 }
