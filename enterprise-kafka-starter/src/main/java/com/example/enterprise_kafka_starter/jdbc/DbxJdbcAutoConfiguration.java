@@ -2,52 +2,42 @@ package com.example.enterprise_kafka_starter.jdbc;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import jakarta.annotation.PreDestroy;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 
 import javax.sql.DataSource;
-import java.util.Set;
 
 @AutoConfiguration
 @EnableConfigurationProperties(DatabricksProperties.class)
-@ConditionalOnProperty(prefix = "enterprise.databricks", name = {"host","http-path","token"})
 public class DbxJdbcAutoConfiguration {
+    private HikariDataSource ds;
 
-    private static final Logger log = LoggerFactory.getLogger(DbxJdbcAutoConfiguration.class);
-
-    @Bean
-    public DataSource databricksDataSource(DatabricksProperties p) {
+    @Bean(name = "databricksSqlDs")
+    @ConditionalOnMissingBean(name = "databricksSqlDs")
+    public DataSource databricksSqlDs(DatabricksProperties p) {
         String url = String.format(
-                "jdbc:databricks://%s:443/default;transportMode=http;ssl=1;AuthMech=3;UID=token;PWD=%s;httpPath=%s;EnableArrow=0;IgnoreTransactions=1;UseNativeQuery=1",
-                p.getHost(), p.getToken(), p.getHttpPath());
+                "jdbc:databricks://%s:443/default;" +
+                        "HttpPath=%s;" +
+                        "AuthMech=3;SSL=1;transportMode=http;" +
+                        "EnableArrow=0;IgnoreTransactions=1;UseNativeQuery=1",
+                p.getHost(), p.getHttpPath());
 
         HikariConfig cfg = new HikariConfig();
         cfg.setJdbcUrl(url);
-        cfg.setDriverClassName("com.databricks.client.jdbc.Driver");
-        cfg.setMaximumPoolSize(5);
+        cfg.setUsername("token");
+        cfg.setPassword(p.getToken());
+        cfg.setMaximumPoolSize(8);
         cfg.setMinimumIdle(1);
-        log.info("Configured Databricks JDBC url for host={} (httpPath hidden)", p.getHost());
-        return new HikariDataSource(cfg);
+        cfg.setPoolName("dbx-sql");
+        ds = new HikariDataSource(cfg);
+        return ds;
     }
 
-    @Bean
-    @ConditionalOnMissingBean(WarehouseIngestor.class)
-    public WarehouseIngestor warehouseIngestor(DataSource ds, DatabricksProperties p) {
-        return new WarehouseIngestor(
-                ds,
-                p.getCatalog(),
-                p.getSchema(),
-                p.getTable(),
-                WarehouseIngestor.Mode.valueOf(p.getMode().toUpperCase()),
-                p.getBatchMaxSize(),
-                p.getBatchFlushMs(),
-                Set.copyOf(p.getMergeKeys()),
-                Set.copyOf(p.getUpdateAllowlist())
-        );
+    @PreDestroy
+    public void close() {
+        if (ds != null) ds.close();
     }
 }

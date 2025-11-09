@@ -2,6 +2,7 @@ package com.example.enterprise_kafka_starter.jdbc;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.context.annotation.Configuration;
 
 import java.util.List;
 
@@ -12,14 +13,13 @@ public class DatabricksProperties {
     private String httpPath;
     private String token;
 
-    private String catalog;
-    private String schema;
-    private String table;
+    private Workspace workspace;
+    private List<FeedConfig> feeds;
 
-    private String mode;
-    private int batchMaxSize;
-    private long batchFlushMs;
-
-    private List<String> mergeKeys = List.of();
-    private List<String> updateAllowlist = List.of();
+    @Data
+    public static class Workspace {
+        private String validationPolicy = "fail";
+        private boolean createBronzeIfMissing = true;
+        private String defaultTimezone = "UTC";
+    }
 }

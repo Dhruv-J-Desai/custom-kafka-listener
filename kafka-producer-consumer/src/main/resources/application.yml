@@ -38,14 +38,48 @@ enterprise:
     host: adb-2900282841250571.11.azuredatabricks.net
     http-path: /sql/1.0/warehouses/bbb98e34c8ca882c
     token: dapi60be1890ad3a87888f279f5c4c71ca41
-    catalog: kafka_data
-    schema: bronze
-    table: trade_events
-    mode: INSERT #INSERT OR MERGE
-    merge-keys: [ trade_id ]
-    update-allowlist: [ symbol, quantity, price, valid_from, tx_start ]
-    batch-max-size: 1000
-    batch-flush-ms: 2000
+
+    workspace:
+      create-bronze-if-missing: true     # SDK will create bronze table if missing
+
+    feeds: # ✅ sibling of workspace
+      - name: trades_scd2
+        topic: ${KAFKA_TOPIC_TRADES:trade-events}
+
+        bronze:
+          table: kafka_data.bronze.trade_events_raw
+
+        table: kafka_data.silver.client_trade_events
+        mode: scd2
+        event-time-column: event_ts
+
+        schema:
+          key-columns: [ ClientId, Symbol ]
+          attributes:
+            - name: Quantity
+              type: decimal(18,2)
+              track-changes: true
+            - name: Price
+              type: decimal(18,2)
+              track-changes: true
+            - name: Direction
+              type: string
+              track-changes: true
+
+        mapping:
+          # Your payload log shows lowercase field names and 'validFrom'
+          # 2025-11-09 ... payload={"clientId":"C001","symbol":"AAPL","direction":"SELL","quantity":50,"price":199.99,"validFrom":"...Z"}
+          ClientId: $.clientId | trim
+          Symbol: $.symbol | upper
+          Quantity: $.quantity | to_decimal(2)
+          Price: $.price | to_decimal(2)
+          Direction: $.direction | upper | trim
+          event_ts: $.validFrom | parse_ts("yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'")
+
+        bitemporal:
+          valid-from-column: valid_from
+          valid-to-column: valid_to
+          is-current-column: is_current
 
 management:
   endpoints:

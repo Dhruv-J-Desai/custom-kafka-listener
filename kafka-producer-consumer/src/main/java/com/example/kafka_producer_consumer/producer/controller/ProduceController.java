@@ -8,8 +8,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Instant;
 import java.util.Map;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/produce")
@@ -21,20 +21,28 @@ public class ProduceController {
     }
 
     @PostMapping
-    public ResponseEntity<Map<String, Object>> produce(@RequestBody Map<String, Object> body) {
-        String tradeId = UUID.randomUUID().toString();
-        String symbol = (String) body.getOrDefault("symbol", "AAPL");
-        int quantity = ((Number) body.getOrDefault("quantity", 100)).intValue();
-        double price = ((Number) body.getOrDefault("price", 199.99)).doubleValue();
+    public ResponseEntity<Map<String, Object>> produce(@RequestBody TradeEvent input) {
+        TradeEvent event = (input.validFrom() != null)
+                ? input
+                : new TradeEvent(
+                input.clientId(),
+                input.symbol(),
+                input.direction(),
+                input.quantity(),
+                input.price(),
+                Instant.now()
+        );
 
-        producer.send(new TradeEvent(tradeId, symbol, quantity, price));
+        producer.send(event);
 
         return ResponseEntity.ok(Map.of(
                 "status", "SENT",
-                "tradeId", tradeId,
-                "symbol", symbol,
-                "quantity", quantity,
-                "price", price
+                "clientId", event.clientId(),
+                "symbol", event.symbol(),
+                "direction", event.direction(),
+                "quantity", event.quantity(),
+                "price", event.price(),
+                "validFrom", event.validFrom().toString()
         ));
     }
 }

@@ -5,13 +5,16 @@ import java.sql.Types;
 import java.util.Locale;
 
 final class TypeMapper {
-  private TypeMapper(){}
+  private TypeMapper() {}
 
-  static int dbxToJdbc(String dbxType) {
-    String t = dbxType.toUpperCase(Locale.ROOT);
-    // strip params e.g. DECIMAL(10,2)
-    int paren = t.indexOf('(');
-    if (paren > 0) t = t.substring(0, paren);
+  /** Map a Databricks/Delta SQL type string to a java.sql.Types code. */
+  static int dbxToJdbc(String dbxTypeRaw) {
+    if (dbxTypeRaw == null || dbxTypeRaw.isBlank()) return Types.VARCHAR;
+    String t = dbxTypeRaw.trim().toUpperCase(Locale.ROOT);
+    // strip parameters e.g. DECIMAL(18,2)
+    int p = t.indexOf('(');
+    if (p > 0) t = t.substring(0, p);
+
 
     switch (t) {
       case "STRING": case "CHAR": case "VARCHAR": return Types.VARCHAR;
@@ -23,16 +26,11 @@ final class TypeMapper {
       case "BIGINT": return Types.BIGINT;
       case "FLOAT": return Types.FLOAT;
       case "DOUBLE": return Types.DOUBLE;
-      case "DECIMAL": return Types.DECIMAL;
+      case "DECIMAL": case "NUMERIC": return Types.DECIMAL;
       case "DATE": return Types.DATE;
-      case "TIMESTAMP": return Types.TIMESTAMP;
-      case "TIMESTAMP_NTZ": return Types.TIMESTAMP; // good enough for binding
-      case "MAP": case "ARRAY": case "STRUCT":
-        // store as JSON text by default (your JsonProjector will provide String)
-        return Types.VARCHAR;
-      default:
-        // fallback to VARCHAR; you can extend as you meet more types
-        return Types.VARCHAR;
+      case "TIMESTAMP": case "TIMESTAMP_NTZ": return Types.TIMESTAMP;
+      case "ARRAY": case "MAP": case "STRUCT": return Types.VARCHAR; // store as JSON text
+      default: return Types.VARCHAR; // safe fallback
     }
   }
 }

@@ -22,11 +22,13 @@ public class TradeEventProducer {
     }
 
     public void send(TradeEvent event) {
-        String key = event.tradeId();
+        String key = event.clientId() + ":" + event.symbol();
         String payload = toJson(event);
+
         ProducerRecord<String, String> record = new ProducerRecord<>(TOPIC, key, payload);
         kafkaTemplate.send(record);
-        System.out.println("Produced record to trade-events topic: " + record);
+
+        log.info("Produced to topic={} key={} event={}", TOPIC, key, payload);
     }
 
     private String toJson(TradeEvent e) {
