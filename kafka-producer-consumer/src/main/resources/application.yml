@@ -39,10 +39,49 @@ enterprise:
     http-path: /sql/1.0/warehouses/bbb98e34c8ca882c
     token: dapi60be1890ad3a87888f279f5c4c71ca41
 
-    workspace:
-      create-bronze-if-missing: true     # SDK will create bronze table if missing
+#    workspace:
+#      create-bronze-if-missing: true     # SDK will create bronze table if missing
 
     feeds: # ✅ sibling of workspace
+#      - name: crm_profiles_scd2
+#        topic: ${KAFKA_TOPIC_TRADES:trade-events}
+#
+#        bronze:
+#          table: kafka_data.bronze.crm_customers
+#
+#        table: kafka_data.silver.crm_customers
+#        mode: scd2
+#        eventTimeColumn: event_ts
+#
+#        schema:
+#          keyColumns: [ Email ]
+#          attributes:
+#            - name: Name
+#              type: string
+#              trackChanges: true
+#            - name: PhoneNo
+#              type: string
+#              trackChanges: true
+#            - name: AccountBal
+#              type: decimal(18,2)
+#              trackChanges: true
+#            - name: Country
+#              type: string
+#              trackChanges: false
+#
+#        mapping:
+#          Email: $.Email | lower | trim
+#          Name: $.Name | trim
+#          PhoneNo: $.PhoneNo | digits_only
+#          AccountBal: $.AccountBal | currency_to_decimal
+#          Country: $.Country | upper
+#          event_ts: $.LastUpdated | parse_ts("yyyy-MM-dd'T'HH:mm:ss")
+#
+#        bitemporal:
+#          validFromColumn: valid_from
+#          validToColumn: valid_to
+#          isCurrentColumn: is_current
+
       - name: trades_scd2
         topic: ${KAFKA_TOPIC_TRADES:trade-events}
 
@@ -80,6 +119,11 @@ enterprise:
           valid-from-column: valid_from
           valid-to-column: valid_to
           is-current-column: is_current
+
+  tracing:
+    enabled: true
+    tracer-name: enterprise-kafka-consumer
+    add-messaging-attributes: true
 
 management:
   endpoints:

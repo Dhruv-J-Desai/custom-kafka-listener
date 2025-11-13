@@ -15,7 +15,8 @@ class SchemaValidator {
         var required = new java.util.HashSet<String>(feed.getSchema().getKeyColumns());
         feed.getSchema().getAttributes().forEach(a -> required.add(a.getName()));
         required.add(feed.getEventTimeColumn());
-        required.add(feed.getBitemporal().getValidFromColumn());
+        required.add(feed
+                .getBitemporal().getValidFromColumn());
         required.add(feed.getBitemporal().getValidToColumn());
         required.add(feed.getBitemporal().getIsCurrentColumn());
 

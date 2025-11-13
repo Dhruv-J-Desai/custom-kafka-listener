@@ -48,7 +48,7 @@ class TableInspector {
         }
     }
 
-    void createBronzeIfMissing(String table) throws SQLException {
+/*    void createBronzeIfMissing(String table) throws SQLException {
         String ddl = "CREATE TABLE IF NOT EXISTS " + table + " (\n" +
                 "  payload STRING,\n" +
                 "  topic STRING,\n" +
@@ -62,5 +62,5 @@ class TableInspector {
              Statement st = c.createStatement()) {
             st.execute(ddl);
         }
-    }
+    }*/
 }

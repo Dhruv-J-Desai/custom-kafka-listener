@@ -1,5 +1,6 @@
 package com.example.enterprise_kafka_starter.config;
 
+import lombok.Data;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.kafka.listener.DefaultErrorHandler;
@@ -12,6 +13,7 @@ import java.util.Map;
  * Opinionated consumer knobs exposed under `enterprise.kafka.consumer.*`.
  * These layer on top of standard `spring.kafka.*` properties.
  */
+@Data
 @ConfigurationProperties(prefix = "enterprise.kafka.consumer")
 public class EnterpriseKafkaProperties {
 
@@ -42,23 +44,4 @@ public class EnterpriseKafkaProperties {
     public DefaultErrorHandler buildErrorHandler() {
         return new DefaultErrorHandler(new FixedBackOff(backoffDelayMs, backoffMaxRetries));
     }
-
-    // getters/setters
-    public boolean isEnableAutoCommit() { return enableAutoCommit; }
-    public void setEnableAutoCommit(boolean enableAutoCommit) { this.enableAutoCommit = enableAutoCommit; }
-
-    public String getAutoOffsetReset() { return autoOffsetReset; }
-    public void setAutoOffsetReset(String autoOffsetReset) { this.autoOffsetReset = autoOffsetReset; }
-
-    public int getMaxPollRecords() { return maxPollRecords; }
-    public void setMaxPollRecords(int maxPollRecords) { this.maxPollRecords = maxPollRecords; }
-
-    public long getPollTimeoutMs() { return pollTimeoutMs; }
-    public void setPollTimeoutMs(long pollTimeoutMs) { this.pollTimeoutMs = pollTimeoutMs; }
-
-    public long getBackoffDelayMs() { return backoffDelayMs; }
-    public void setBackoffDelayMs(long backoffDelayMs) { this.backoffDelayMs = backoffDelayMs; }
-
-    public int getBackoffMaxRetries() { return backoffMaxRetries; }
-    public void setBackoffMaxRetries(int backoffMaxRetries) { this.backoffMaxRetries = backoffMaxRetries; }
 }

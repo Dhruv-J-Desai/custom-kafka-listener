@@ -45,19 +45,21 @@ public class BitemporalIngestionService {
         // Bronze always
         try {
             if (bronzeTable != null) {
-                if (props.getWorkspace().isCreateBronzeIfMissing() && !inspector.tableExists(bronzeTable)) {
-                    inspector.createBronzeIfMissing(bronzeTable);
+                if (!inspector.tableExists(bronzeTable)) {
+                    /*inspector.createBronzeIfMissing(bronzeTable);*/
+                    log.error("Bronze table {} does not exist.", bronzeTable);
+                } else {
+                    bronzeWriter.insertRaw(
+                            bronzeTable,
+                            rec.value(),
+                            rec.topic(),
+                            rec.key(),
+                            rec.headers(),
+                            now,
+                            eventTs,
+                            feed.getName()
+                    );
                 }
-                bronzeWriter.insertRaw(
-                        bronzeTable,
-                        rec.value(),
-                        rec.topic(),
-                        rec.key(),
-                        rec.headers(),
-                        now,
-                        eventTs,
-                        feed.getName()
-                );
             }
         } catch (Exception e) {
             log.error("Bronze insert failed (feed={}): {}", feed.getName(), e.getMessage(), e);
