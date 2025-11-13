@@ -1,5 +1,6 @@
 package com.example.enterprise_kafka_starter.jdbc;
 
+import com.example.enterprise_kafka_starter.tracing.DeltaTracingSupport;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -27,7 +28,7 @@ public class BitemporalIngestionService {
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("No feed mapped to topic: " + topic));
 
-        String feedName    = feed.getName();
+        String feedName = feed.getName();
         String bronzeTable = feed.getBronze() != null ? feed.getBronze().getTable() : null;
         String silverTable = feed.getTable();
 
@@ -36,16 +37,23 @@ public class BitemporalIngestionService {
 
         // try parse only event_ts for bronze metadata
         try {
-            Object doc = mapper.parse(rec.value());
+            final Object doc = mapper.parse(rec.value());
             if (feed.getMapping().containsKey(feed.getEventTimeColumn())) {
                 Map<String, Object> tmp = mapper.apply(
                         doc,
                         Map.of(feed.getEventTimeColumn(), feed.getMapping().get(feed.getEventTimeColumn())));
-                Object ts = tmp.get(feed.getEventTimeColumn());
+                final Object ts = tmp.get(feed.getEventTimeColumn());
                 if (ts instanceof LocalDateTime) eventTs = (LocalDateTime) ts;
             }
         } catch (Exception ignore) {
         }
+
+        // Make values lambda-safe
+        final LocalDateTime finalEventTs = eventTs;
+        final String rawPayload = rec.value();
+        final String rawKey = rec.key();
+        final String rawTopic = rec.topic();
+        final var rawHeaders = rec.headers();
 
         // Bronze always
         try {
@@ -54,15 +62,21 @@ public class BitemporalIngestionService {
                     /*inspector.createBronzeIfMissing(bronzeTable);*/
                     log.error("Bronze table {} does not exist.", bronzeTable);
                 } else {
-                    bronzeWriter.insertRaw(
+                    DeltaTracingSupport.tracedVoid(
+                            "delta bronze insert",
+                            "bronze",
                             bronzeTable,
-                            rec.value(),
-                            rec.topic(),
-                            rec.key(),
-                            rec.headers(),
-                            now,
-                            eventTs,
-                            feed.getName()
+                            feedName,
+                            () -> bronzeWriter.insertRaw(
+                                    bronzeTable,
+                                    rawPayload,
+                                    rawTopic,
+                                    rawKey,
+                                    rawHeaders,
+                                    now,
+                                    finalEventTs,
+                                    feedName
+                            )
                     );
                 }
             }
@@ -73,7 +87,7 @@ public class BitemporalIngestionService {
         // Silver only if both exist
         boolean silverExists, bronzeExists;
         try {
-            silverExists = inspector.tableExists(feed.getTable());
+            silverExists = inspector.tableExists(silverTable);
             bronzeExists = bronzeTable == null || inspector.tableExists(bronzeTable);
         } catch (Exception e) {
             log.error("Table existence check failed: {}", e.getMessage(), e);
@@ -82,16 +96,25 @@ public class BitemporalIngestionService {
 
         if (silverExists && bronzeExists) {
             try {
-                Object doc = mapper.parse(rec.value());
-                Map<String, Object> mapped = mapper.apply(doc, feed.getMapping());
-                NormalizedRow row = NormalizedRow.builder()
+                final Object doc = mapper.parse(rec.value());
+                final Map<String, Object> mapped = mapper.apply(doc, feed.getMapping());
+
+                final NormalizedRow row = NormalizedRow.builder()
                         .values(mapped)
                         .keyColumns(feed.getSchema().getKeyColumns())
                         .eventTimeColumn(feed.getEventTimeColumn())
                         .build();
 
                 validator.validateOrThrow(feed);
-                scd2.mergeRow(feed, row, true);
+
+                // Wrap SCD2 merge in its own span
+                DeltaTracingSupport.tracedVoid(
+                        "delta silver SCD2 merge",
+                        "silver",
+                        silverTable,
+                        feedName,
+                        () -> scd2.mergeRow(feed, row, true)
+                );
 
             } catch (Exception e) {
                 log.error("Silver SCD2 failed (feed={}): {}", feed.getName(), e.getMessage(), e);
