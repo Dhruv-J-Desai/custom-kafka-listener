@@ -27,7 +27,10 @@ public class BitemporalIngestionService {
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("No feed mapped to topic: " + topic));
 
+        String feedName    = feed.getName();
         String bronzeTable = feed.getBronze() != null ? feed.getBronze().getTable() : null;
+        String silverTable = feed.getTable();
+
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime eventTs = null;
 
@@ -35,7 +38,9 @@ public class BitemporalIngestionService {
         try {
             Object doc = mapper.parse(rec.value());
             if (feed.getMapping().containsKey(feed.getEventTimeColumn())) {
-                Map<String, Object> tmp = mapper.apply(doc, Map.of(feed.getEventTimeColumn(), feed.getMapping().get(feed.getEventTimeColumn())));
+                Map<String, Object> tmp = mapper.apply(
+                        doc,
+                        Map.of(feed.getEventTimeColumn(), feed.getMapping().get(feed.getEventTimeColumn())));
                 Object ts = tmp.get(feed.getEventTimeColumn());
                 if (ts instanceof LocalDateTime) eventTs = (LocalDateTime) ts;
             }
