@@ -25,11 +25,15 @@ class BronzeWriter {
                    Headers headers,
                    LocalDateTime ingestTs,
                    LocalDateTime eventTs,
-                   String sourceSystem) throws Exception {
+                   String sourceSystem,
+                   String ingestionId,
+                   String silverStatus,
+                   String silverError,
+                   LocalDateTime silverProcessedAt) throws Exception {
 
         String sql = "INSERT INTO " + bronzeTable +
-                " (payload, topic, key, headers, ingest_ts, event_ts, source_system) " +
-                " VALUES (?, ?, ?, ?, ?, ?, ?)";
+                " (payload, topic, key, headers, ingest_ts, event_ts, source_system, ingestionId, silver_status, silver_error, silver_processed_at) " +
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
         try (Connection c = databricksSqlDs.getConnection();
              PreparedStatement ps = c.prepareStatement(sql)) {
@@ -44,6 +48,10 @@ class BronzeWriter {
             else ps.setNull(6, Types.TIMESTAMP);
 
             ps.setString(7, sourceSystem);
+            ps.setString(8, ingestionId);
+            ps.setString(9, silverStatus);
+            ps.setString(10, silverError);
+            ps.setTimestamp(11, silverProcessedAt != null ? Timestamp.valueOf(silverProcessedAt) : null);
             ps.executeUpdate();
         }
     }
@@ -59,5 +67,29 @@ class BronzeWriter {
             if (h.value() != null) sb.append(Base64.getEncoder().encodeToString(h.value()));
         }
         return sb.toString();
+    }
+
+    public void markSilverStatus(
+            String table,
+            String ingestionId,
+            String status,
+            String error,
+            LocalDateTime processedAt
+    ) throws Exception {
+
+        try (Connection conn = databricksSqlDs.getConnection()) {
+            String sql = "UPDATE " + table +
+                    " SET silver_status = ?, silver_error = ?, silver_processed_at = ?" +
+                    " WHERE ingestion_id = ?";
+
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setString(1, status);
+                ps.setString(2, error);
+                ps.setTimestamp(3, processedAt != null ? Timestamp.valueOf(processedAt) : null);
+                ps.setString(4, ingestionId);
+
+                ps.executeUpdate();
+            }
+        }
     }
 }

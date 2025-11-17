@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -22,6 +23,9 @@ public class BitemporalIngestionService {
     private final MappingEngine mapper = new MappingEngine();
 
     public void process(ConsumerRecord<String, String> rec) {
+        String ingestionId = UUID.randomUUID().toString();
+        final String finalIngestionId = ingestionId; // for lambdas
+
         String topic = rec.topic();
         FeedConfig feed = props.getFeeds().stream()
                 .filter(f -> topic.equalsIgnoreCase(f.getTopic()))
@@ -75,7 +79,11 @@ public class BitemporalIngestionService {
                                     rawHeaders,
                                     now,
                                     finalEventTs,
-                                    feedName
+                                    feedName,
+                                    finalIngestionId,
+                                    "PENDING",
+                                    null,
+                                    null
                             )
                     );
                 }
@@ -116,8 +124,30 @@ public class BitemporalIngestionService {
                         () -> scd2.mergeRow(feed, row, true)
                 );
 
+                // ✅ mark bronze row as SUCCESS
+                bronzeWriter.markSilverStatus(
+                        bronzeTable,
+                        ingestionId,
+                        "SUCCESS",
+                        null,
+                        LocalDateTime.now()
+                );
+
             } catch (Exception e) {
                 log.error("Silver SCD2 failed (feed={}): {}", feed.getName(), e.getMessage(), e);
+
+                // ❌ mark bronze row as FAILED with error info
+                try {
+                    bronzeWriter.markSilverStatus(
+                            bronzeTable,
+                            ingestionId,
+                            "FAILED",
+                            e.getMessage(),
+                            LocalDateTime.now()
+                    );
+                } catch (Exception ex) {
+                    log.error("Failed to update bronze status for ingestionId={}: {}", ingestionId, ex.getMessage(), ex);
+                }
             }
         } else {
             log.info("Skipping Silver for feed={} (silverExists={}, bronzeExists={})", feed.getName(), silverExists, bronzeExists);

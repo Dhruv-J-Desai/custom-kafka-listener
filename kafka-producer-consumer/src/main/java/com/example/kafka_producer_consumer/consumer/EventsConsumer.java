@@ -26,8 +26,8 @@ public class EventsConsumer {
         try {
             log.info("Consume: partition={}, offset={}, key={}, payload={}",
                     record.partition(), record.offset(), record.key(), record.value());
-            ingestion.process(record);
-            ack.acknowledge();
+//            ingestion.process(record);
+//            ack.acknowledge();
         } catch (Exception e) {
             log.error("Processing failed, delegating to error handler", e);
             throw e;
